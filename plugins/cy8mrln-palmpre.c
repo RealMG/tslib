@@ -8,6 +8,9 @@
  * This file is placed under the LGPL.  Please see the file
  * COPYING for more details.
  *
+ * SPDX-License-Identifier: LGPL-2.1
+ *
+ *
  * Plugin for the cy8mrln touchscreen of the Palm Pre/Pre Plus/Pre 2 devices.
  */
 
@@ -514,7 +517,7 @@ static int cy8mrln_palmpre_read(struct tslib_module_info *info, struct ts_sample
 	int ret, valid_samples = 0;
 	struct ts_sample *p = samp;
 
-	/* initalize all samples with proper values */
+	/* initialize all samples with proper values */
 	memset(p, '\0', nr * sizeof (*p));
 
 	cy8mrln_info = container_of(info, struct tslib_cy8mrln_palmpre, module);
@@ -637,11 +640,14 @@ static int cy8mrln_palmpre_update_references(uint16_t references[H_FIELDS * V_FI
 
 static int cy8mrln_palmpre_fini(struct tslib_module_info *info)
 {
-	struct tslib_cy8mrln_palmpre *i = container_of(info, struct tslib_cy8mrln_palmpre, module);
-	if (i->last_valid_samples != NULL) {
-		free (i->last_valid_samples);
-	}
-	free (i);
+	struct tslib_cy8mrln_palmpre *i = container_of(info,
+						struct tslib_cy8mrln_palmpre,
+						module);
+
+	if (i->last_valid_samples != NULL)
+		free(i->last_valid_samples);
+
+	free(i);
 #ifdef DEBUG
 	fprintf(stderr, "finishing cy8mrln_palmpre");
 #endif
@@ -706,7 +712,7 @@ TSAPI struct tslib_module_info *cy8mrln_palmpre_mod_init(struct tsdev *dev, cons
 		return NULL;
 	}
 
-	/* We need the intial values the touchscreen repots with no touch input for
+	/* We need the initial values the touchscreen repots with no touch input for
 	 * later use */
 	do {
 		ret = read(dev->fd, &input, sizeof(input));

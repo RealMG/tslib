@@ -1,21 +1,23 @@
 /*
  *  font.h -- `Soft' font definitions
  *
- *  Created 1995 by Geert Uytterhoeven
+ *  Copyright (C) 1995 Geert Uytterhoeven
  *
  *  This file is subject to the terms and conditions of the GNU General Public
  *  License.  See the file COPYING for more details.
+ *
+ * SPDX-License-Identifier: GPL-2.0+
  */
 
 #ifndef _VIDEO_FONT_H
 #define _VIDEO_FONT_H
 
 struct fbcon_font_desc {
-    int idx;
-    char *name;
-    int width, height;
-    unsigned char *data;
-    int pref;
+	int idx;
+	char *name;
+	int width, height;
+	unsigned char *data;
+	int pref;
 };
 
 #define VGA8x8_IDX	0

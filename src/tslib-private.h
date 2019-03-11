@@ -8,6 +8,8 @@
  * This file is placed under the LGPL.  Please see the file
  * COPYING for more details.
  *
+ * SPDX-License-Identifier: LGPL-2.1
+ *
  *
  * Internal touch screen library definitions.
  */
@@ -20,6 +22,7 @@ extern "C" {
 
 struct tsdev {
 	int fd;
+	char *eventpath;
 	struct tslib_module_info *list;
 	/* points to position in 'list' where raw reads
 	 * come from.  default is the position of the
@@ -36,6 +39,8 @@ int __ts_attach_raw(struct tsdev *ts, struct tslib_module_info *info);
 int ts_load_module(struct tsdev *dev, const char *module, const char *params);
 int ts_load_module_raw(struct tsdev *dev, const char *module, const char *params);
 int ts_error(const char *fmt, ...);
+int ts_config_ro(struct tsdev *ts, char **conffile_modules,
+		 char **conffile_params, int *raw);
 
 #ifdef __cplusplus
 }

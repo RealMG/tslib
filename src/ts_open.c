@@ -6,6 +6,8 @@
  * This file is placed under the LGPL.  Please see the file
  * COPYING for more details.
  *
+ * SPDX-License-Identifier: LGPL-2.1
+ *
  *
  * Open a touchscreen device.
  */
@@ -33,10 +35,7 @@ extern struct tslib_module_info __ts_raw;
  */
 static void print_host_os(void)
 {
-	struct ts_lib_version_data *version = ts_libversion();
-
-	printf("tslib %s (library 0x%06X) on ",
-	       version->package_version, version->version_num);
+	printf("%s ", tslib_version());
 
 #if defined (__linux__)
 	printf("Host OS: Linux");
@@ -84,6 +83,10 @@ struct tsdev *ts_open(const char *name, int nonblock)
 
 	memset(ts, 0, sizeof(struct tsdev));
 
+	ts->eventpath = strdup(name);
+	if (!ts->eventpath)
+		goto free;
+
 	if (ts_open_restricted) {
 		ts->fd = ts_open_restricted(name, flags, NULL);
 		if (ts->fd == -1)
@@ -111,6 +114,9 @@ struct tsdev *ts_open(const char *name, int nonblock)
 	return ts;
 
 free:
+	if (ts->eventpath)
+		free(ts->eventpath);
+
 	free(ts);
 	return NULL;
 }

@@ -1,13 +1,12 @@
-
-
-![logo](website/tslib_logo_web.jpg?raw=true)
-[![Coverity Scan Build Status](https://scan.coverity.com/projects/11027/badge.svg)](https://scan.coverity.com/projects/tslib)
+![logo](website/logo.svg)
+ [![Coverity Scan Build Status](https://scan.coverity.com/projects/11027/badge.svg)](https://scan.coverity.com/projects/tslib)
+[![Language grade: C/C++](https://img.shields.io/lgtm/grade/cpp/g/kergoth/tslib.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/kergoth/tslib/context:cpp)
 [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/752/badge)](https://bestpractices.coreinfrastructure.org/projects/752)
 
 # C library for filtering touchscreen events
 
 tslib consists of the library _libts_ and tools that help you _calibrate_ and
-_use it_ in your environment. There's a [short introductory presentation from 2017](https://fosdem.org/2017/schedule/event/tslib/).
+_use it_ in your environment.
 
 ## contact
 If you have problems, questions, ideas or suggestions, please contact us by
@@ -23,6 +22,7 @@ Visit the [tslib website](http://tslib.org) for an overview of the project.
 * [the libts library](#the-libts-library)
 * [building tslib](#building-tslib)
 * [hardware support](#touchscreen-hardware-support)
+* [contribute](#contributors)
 
 
 ## setup and configure tslib
@@ -38,34 +38,11 @@ Apart from building the latest tarball release, running
 [OpenSUSE](https://software.opensuse.org/package/tslib)
 and their package management.
 
-### environment variables
-You only need the variables in case the following defaults don't fit. On Linux,
-tslib (using `ts_setup()`) tries to automatically find your touchscreen input
-device.:
-
-    TSLIB_TSDEVICE          Touchscreen device file name.
-                            Default: automatic detection (ts_setup() on Linux)
-
-    TSLIB_CALIBFILE         Calibration file.
-                            Default:                ${sysconfdir}/pointercal
-
-    TSLIB_CONFFILE          Config file.
-                            Default:                ${sysconfdir}/ts.conf
-
-    TSLIB_PLUGINDIR         Plugin directory.
-                            Default:                ${datadir}/plugins
-
-    TSLIB_CONSOLEDEVICE     Console device.
-                            Default:                /dev/tty
-
-    TSLIB_FBDEVICE          Framebuffer device.
-                            Default:                /dev/fb0
-
 ### configure tslib
 This is just an example `/etc/ts.conf` file. Touch samples flow from top to
 bottom. Each line specifies one module and it's parameters. Modules are
-processed in order. Use _one_ module_raw that accesses your device, followed
-by any combination of filter modules.
+processed in order. Use _one_ module_raw on top, that accesses your device,
+followed by any combination of filter modules.
 
     module_raw input
     module median depth=3
@@ -73,7 +50,9 @@ by any combination of filter modules.
     module linear
 
 see the [section below](#filter-modules) for available filters and their
-parameters.
+parameters. On Linux, your first commented-in line should always be
+`module_raw input` which offers one optional parameter: `grab_events=1`
+if you want it to execute EVIOCGRAB on the device.
 
 With this configuration file, we end up with the following data flow
 through the library:
@@ -101,6 +80,31 @@ filters, using [`ts_test_mt`](https://manpages.debian.org/unstable/libts0/ts_tes
 
 ![ts_test_mt](doc/screenshots/ts_test_mt.png?raw=true)
 
+On the bottom left of the screen, you see the available concurrent touch contacts
+supported, and whether it's because the driver says so, or ts_test_mt was started
+with the `-j` commandline option to overwrite it.
+
+### environment variables (optional)
+You may override defaults. In most cases you won't need to do so though:
+
+    TSLIB_TSDEVICE          Touchscreen device file name.
+                            Default:                automatic detection (on Linux)
+
+    TSLIB_CALIBFILE         Calibration file.
+                            Default:                ${sysconfdir}/pointercal
+
+    TSLIB_CONFFILE          Config file.
+                            Default:                ${sysconfdir}/ts.conf
+
+    TSLIB_PLUGINDIR         Plugin directory.
+                            Default:                ${datadir}/plugins
+
+    TSLIB_CONSOLEDEVICE     Console device. (not needed when using --with-sdl2)
+                            Default:                /dev/tty
+
+    TSLIB_FBDEVICE          Framebuffer device.
+                            Default:                /dev/fb0
+
 ### use the filtered result in your system (X.org method)
 If you're using X.org graphical X server, things should be very easy. Install
 tslib and [xf86-input-tslib](https://github.com/merge/xf86-input-tslib),
@@ -108,82 +112,85 @@ reboot, and you should instantly have your `ts.conf` filters running, without
 configuring anything else yourself.
 
 ### use the filtered result in your system (ts_uinput method)
-**TL;DR:** Use `tools/ts_uinput_start.sh` and use `/dev/input/ts_uinput` as your evdev
-device.
+**TL;DR:** Run `tools/ts_uinput_start.sh` during startup and use
+`/dev/input/ts_uinput` as your evdev input device.
 
 
 tslib tries to automatically find your touchscreen device in `/dev/input/event*`
-on Linux. Use it via `ts_uinput`:
+on Linux. Now make `ts_uinput` use it, instead of your graphical environment
+directly:
 
     # ts_uinput -d -v
 
 `-d` makes the program return and run as a daemon in the background. `-v` makes
 it print the __new__ `/dev/input/eventX` device node before returning.
 
-You can use **evdev** drivers now. For *Qt5* for example you'd
-probably set something like this:
+Now make your graphical environment use that new input device, using **evdev**
+drivers.
 
-    QT_QPA_GENERIC_PLUGINS=evdevtouch:/dev/input/eventX
+* For *Qt5* for example you'd probably set something like this:
+
     QT_QPA_EVDEV_TOUCHSCREEN_PARAMETERS=/dev/input/eventX:rotate=0
 
-For *X11* you'd probably edit your `xorg.conf` `Section "InputDevice"` for your
+* For *X11* you'd probably edit your `xorg.conf` `Section "InputDevice"` for your
 touchscreen to have
 
     Option "Device" "/dev/input/eventX"
 
-For *Wayland*, you'd make libinput use the new `/dev/input/eventX` and so on.
-Please see your system's documentation on how to use a specific evdev input device.
-
-Remember to set your environment and configuration for `ts_uinput`, just like you
-did for `ts_calibrate` or `ts_test_mt`.
+Please consult your input system's documentation on how to use a specific
+evdev input device.
 
 Let's recap the data flow here:
 
-    driver --> raw read --> filter --> filter(s) --> ts_uinput (ts_read_mt())  --> libevdev read  --> GUI app
-               module       module     module(s)     daemon                        e.g. in libinput
+    driver --> raw read --> filter(s) ... --> ts_uinput --> libevdev read  --> GUI app/toolkit
+               module       module(s) ...     daemon        e.g. in libinput
 
-#### symlink to /dev/input/ts_uinput
-Again, /dev/input/event numbers are not persistent. In order to know in advance,
-*what* enumerated input device file is created by `ts_uinput`, you can, among
-other thing:
+#### symlink /dev/input/ts_uinput to the new event file
+/dev/input/event numbers are not persistent. In order to know in advance,
+*what* enumerated input device file is created by `ts_uinput`, you can use
+a symlink:
 
 * use the included `tools/ts_uinput_start.sh` script that starts
-  `ts_uinput -d -v` and creates the symlink `/dev/input/ts_uinput` for you, or
+  `ts_uinput -d -v` and creates the symlink called `/dev/input/ts_uinput` for
+  you, or
 
-* if you're using *udev and systemd*, create the following udev rule, for
+* if you're using *systemd*, create the following udev rule, for
   example `/etc/udev/rules.d/98-touchscreen.rules`:
 
+      SUBSYSTEM=="input", KERNEL=="event[0-9]*", ATTRS{name}=="NAME_OF_THE_TOUCH_CONTROLLER", SYMLINK+="input/ts", TAG+="systemd"
       SUBSYSTEM=="input", KERNEL=="event[0-9]*", ATTRS{name}=="ts_uinput", SYMLINK+="input/ts_uinput"
 
-  in case you have to use non-standard paths, create a file containing the
-  environment or tslib, like `/etc/ts.env`
+where `NAME_OF_THE_TOUCH_CONTROLLER` the touchscreen found in your `cat /proc/bus/input/devices | grep Name`. The first rule is only needed, if tslib doesn't automatically choose
+the correct device for you.
 
-      TSLIB_TSDEVICE=/dev/input/ts
+#### running as systemd service (optional)
+in case you have to use non-default paths, create a file containing the
+environment for tslib, like `/etc/ts.env`
+
       TSLIB_CALIBFILE=/etc/pointercal
       TSLIB_CONFFILE=/etc/ts.conf
       TSLIB_PLUGINDIR=/usr/lib/ts
-      TSLIB_FBDEVICE=/dev/fb0
 
-  and create a systemd service file, like `/usr/lib/systemd/system/ts_uinput.service`
+and create a systemd service file, like `/usr/lib/systemd/system/ts_uinput.service`
 
       [Unit]
       Description=touchscreen input
-      Wants=dev-input-ts_raw.device
-      After=dev-input-ts_raw.device
+      Wants=dev-input-ts.device
+      After=dev-input-ts.device
 
       [Service]
-      Type=oneshot
+      Type=forking
       EnvironmentFile=/etc/ts.env
-      ExecStart=/bin/sh -c 'exec /usr/bin/ts_uinput &> /var/log/ts_uinput.log'
+      ExecStart=/usr/bin/ts_uinput -d
 
       [Install]
       WantedBy=multi-user.target
 
-  and
+Adjust the paths. They could as well be in `/usr/local/` too. and
 
       #systemctl enable ts_uinput
 
-  will enable it permanently.
+will enable it permanently.
 
 ### other operating systems
 There is no tool that we know of that reads tslib samples and uses the
@@ -200,6 +207,12 @@ for example (yet).
   a configuration file.
 
 Parameters (usually not needed):
+* `rot`
+
+	overwrite the rotation to apply. clockwise: `rot=1`, upside down:
+	`rot=2`, couter-clockwise: `rot=3`. Default: screen-rotation during
+	`ts_calibrate` calibration.
+
 * `xyswap`
 
 	interchange the X and Y co-ordinates -- no longer used or needed
@@ -207,15 +220,31 @@ Parameters (usually not needed):
 
 * `pressure_offset`
 
-	offset applied to the pressure value
+	offset applied to the pressure value. Default: 0
 * `pressure_mul`
 
-	factor to multiply the pressure value with
+	factor to multiply the pressure value with. Default: 1.
 * `pressure_div`
 
-	value to divide the pressure value by
+	value to divide the pressure value by. Default: 1.
 
-Example: `module linear`
+Example: `module linear rot=0`
+
+
+### module: invert
+  Invert values in X and/or Y direction around the given value.
+  There are no default values. If specified, a value has to be
+  set. If one axis is not specified, it's simply untouched.
+
+Parameters:
+* `x0`
+
+	X-axis (horizontal) value around which to invert.
+* `y0`
+
+	Y-axis (vertical) value around which to invert.
+
+Example: `module invert y0=640` (Y-axis inverted for 640 screen height, X-axis untouched)
 
 
 ### module: median
@@ -226,7 +255,7 @@ Example: `module linear`
 Parameters:
 * `depth`
 
-	Number of samples to apply the median filter to
+	Number of samples to apply the median filter to. Default: 3.
 
 Example: `module median depth=5`
 
@@ -239,12 +268,12 @@ Example: `module median depth=5`
 Parameters:
 * `pmin`
 
-	Minimum pressure value for a sample to be valid.
+	Minimum pressure value for a sample to be valid. Default: 1.
 * `pmax`
 
-	Maximum pressure value for a sample to be valid.
+	Maximum pressure value for a sample to be valid. Default: (`INT_MAX`).
 
-Example: `pthres pmin=10`
+Example: `module pthres pmin=10`
 
 
 ### module: iir
@@ -259,10 +288,10 @@ Example: `pthres pmin=10`
 Parameters:
 * `N`
 
-	numerator of the smoothing fraction
+	numerator of the smoothing fraction. Default: 0.
 * `D`
 
-	denominator of the smoothing fraction
+	denominator of the smoothing fraction. Default: 1.
 
 Example: `module iir N=6 D=10`
 
@@ -270,7 +299,7 @@ Example: `module iir N=6 D=10`
 ### module: dejitter
   Removes jitter on the X and Y co-ordinates. This is achieved by applying a
   weighted smoothing filter. The latest samples have most weight; earlier
-  samples have less weight. This allows to achieve 1:1 input->output rate. See
+  samples have less weight. This allows one to achieve 1:1 input->output rate. See
   [Wikipedia](https://en.wikipedia.org/wiki/Jitter#Mitigation) for some
   theory.
 
@@ -281,7 +310,7 @@ Parameters:
 	defines the 'quick motion' threshold. If the pen moves quick, it
 	is not feasible to smooth pen motion, besides quick motion is not
 	precise anyway; so if quick motion is detected the module just
-	discards the backlog and simply copies input to output.
+	discards the backlog and simply copies input to output. Default: 100.
 
 Example: `module dejitter delta=100`
 
@@ -295,7 +324,7 @@ Parameters:
 * `drop_threshold`
 
 	drop events up to this number of milliseconds after the last
-	release event.
+	release event. Default: 0.
 
 Example: `module debounce drop_threshold=40`
 
@@ -307,10 +336,10 @@ Example: `module debounce drop_threshold=40`
 Parameters:
 * `nhead`
 
-	Number of events to drop after pressure
+	Number of events to drop after pressure. Default: 1.
 * `ntail`
 
-	Number of events to drop before release
+	Number of events to drop before release. Default: 1.
 
 Example: `module skip nhead=2 ntail=1`
 
@@ -322,11 +351,11 @@ Parameters:
 * `factor`
 
 	floating point value between 0 and 1; for example 0.2 for more smoothing
-	or 0.8 for less.
+	or 0.8 for less. Default: 0.4.
 * `threshold`
 
 	x or y minimum distance between two samples to start applying the
-        filter.
+        filter. Default: 2.
 
 Example: `module lowpass factor=0.5 threshold=1`
 
@@ -389,10 +418,13 @@ while you are free to play with the parameter values.
 
 ### screen rotation
 The graphical tools support rotating the screen, see
-`ts_calibrate --help` or the man pages for the details. Note that this _only_
-rotates the framebuffer output. Rotating the input samples is a different task
-that has to be done by the linear filter module (re-calibrating or re-loading
-with different parameters).
+`ts_calibrate --help` or the man pages for the details.
+`ts_calibrate` will (in the background) ignore screen rotation
+but will save the current rotation state in the "calibration file"
+`TSLIB_CALIBFILE`. The `linear` filter module will pick that up
+and apply the given rotation. It can be overwritten by using
+the `rot` module parameter: `module linear rot=0` (if your
+toolkit or higher level application does rotation).
 
 ***
 
@@ -402,6 +434,7 @@ with different parameters).
 The API is documented in our man pages in the doc directory.
 Check out our tests directory for examples how to use it.
 
+[`tslib_version()`](https://manpages.debian.org/unstable/libts0/tslib_version.3.en.html)  
 [`ts_libversion()`](https://manpages.debian.org/unstable/libts0/ts_libversion.3.en.html)  
 [`ts_open()`](https://manpages.debian.org/unstable/libts0/ts_open.3.en.html)  
 [`ts_config()`](https://manpages.debian.org/unstable/libts0/ts_config.3.en.html)  
@@ -418,6 +451,10 @@ Check out our tests directory for examples how to use it.
 [`int (*ts_error_fn)(const char *fmt, va_list ap)`](https://manpages.debian.org/unstable/libts0/ts_error_fn.3.en.html)  
 [`int (*ts_open_restricted)(const char *path, int flags, void *user_data)`](https://manpages.debian.org/unstable/libts0/ts_open_restricted.3.en.html)  
 [`void (*ts_close_restricted)(int fd, void *user_data)`](https://manpages.debian.org/unstable/libts0/ts_close_restricted.3.en.html)  
+[`ts_get_eventpath()`](https://manpages.debian.org/unstable/libts0/ts_get_eventpath.3.en.html)  
+[`ts_print_ascii_logo()`](https://manpages.debian.org/unstable/libts0/ts_print_ascii_logo.3.en.html)  
+[`ts_conf_get()`](https://manpages.debian.org/unstable/libts0/ts_conf_get.3.en.html)  
+[`ts_conf_set()`](https://manpages.debian.org/unstable/libts0/ts_conf_set.3.en.html)  
 
 
 ### using libts
@@ -427,7 +464,7 @@ in your source files:
     #include <tslib.h>
 
 
-To link with with library, specify `-lts` as an argument to the linker.
+To link with the library, specify `-lts` as an argument to the linker.
 
 #### compiling using autoconf and pkg-config
 On UNIX systems you can use pkg-config to automatically select the appropriate
@@ -460,6 +497,7 @@ This is a complete example program, similar to `ts_print_mt.c`:
     #include <fcntl.h>
     #include <sys/time.h>
     #include <unistd.h>
+    #include <errno.h>
 
     #include <tslib.h>
 
@@ -471,7 +509,6 @@ This is a complete example program, similar to `ts_print_mt.c`:
         struct tsdev *ts;
         char *tsdevice = NULL;
         struct ts_sample_mt **samp_mt = NULL;
-        struct input_absinfo slot;
         int ret, i, j;
 
         ts = ts_setup(tsdevice, 0);
@@ -505,7 +542,7 @@ This is a complete example program, similar to `ts_print_mt.c`:
                 for (j = 0; j < ret; j++) {
                 	for (i = 0; i < SLOTS; i++) {
 			#ifdef TSLIB_MT_VALID
-				if (!(samp_mt[j][i].valid & TSLIB_MT_VALID)
+				if (!(samp_mt[j][i].valid & TSLIB_MT_VALID))
 					continue;
 			#else
 				if (samp_mt[j][i].valid < 1)
@@ -618,8 +655,12 @@ that get called in the chain of filters.
 | --- | --- |
 |`TSLIB_VERSION_MT` | 1.10 |
 |`TSLIB_VERSION_OPEN_RESTRICTED` | 1.13 |
+|`TSLIB_VERSION_EVENTPATH` | 1.15 |
+|`TSLIB_VERSION_VERSION` | 1.16 |
 |`TSLIB_MT_VALID` | 1.13 |
 |`TSLIB_MT_VALID_TOOL` | 1.13 |
+|`tslib_version` | 1.16 |
+|`ts_print_ascii_logo` | 1.16 |
 |`ts_libversion` | 1.10 |
 |`ts_close` | 1.0 |
 |`ts_config` | 1.0 |
@@ -637,6 +678,9 @@ that get called in the chain of filters.
 |`ts_read_raw` | 1.0 |
 |`ts_read_raw_mt` | 1.3 |
 |`tslib_parse_vars` | 1.0 |
+|`ts_get_eventpath` | 1.15 |
+|`ts_conf_get` | 1.18 |
+|`ts_conf_set` | 1.18 |
 
 
 ***
@@ -655,6 +699,36 @@ of libts. Here's an example for this:
 
 This should result in a `libts.a` of roughly 50 kilobytes, ready for using
 calibration (linear filter) and the infinite impulse response filter in ts.conf.
+
+### CMake
+
+Alternatively you can use CMake to build the project.
+To create an build in the project tree:
+
+    mkdir build && cd build
+    cmake ../
+    # or adding configuration options: cmake -Denable-input-evdev=ON ../
+    cmake --build .
+    cmake -P cmake_install.cmake
+
+By default the core tslib is built as a shared library.
+In order to build it as static, add `-DBUILD_SHARED_LIBS=OFF` to the configure line.
+
+Also the plugins are by default built as shared.  Add `-Dstatic-<module>=ON` to the configuration step to
+build plugin statically into the core tslib. To disable and enable modules, 
+use flags: `-Denable-<module>=ON/OFF`.
+
+#### Using tslib in client apps
+
+The following is a minimal example how to use tslib built with CMake in your client app. 
+Adding `tslib::tslib` as a link target will add required dependencies and include directories generated build files.
+
+    cmake_minimum_required(VERSION 3.10)
+    project(tslib_client)
+    find_package(tslib 1.16)
+    add_executable(tslib_client main.c)
+    target_link_libraries(tslib_client PUBLIC tslib::tslib)
+	
 
 ### portable `ts_calibrate` and `ts_test_mt` using SDL2
 
@@ -699,9 +773,10 @@ __disabled__:
 * `h3600`
 * `mk712`
 * `ucb1x00`
+* `tatung`
 
 Please note that this list may grow over time. If you rely on
-a particular input plugin, you should enable it explicitely. On Linux
+a particular input plugin, you should enable it explicitly. On Linux
 you should only need `input` though.
 
 * GNU / Linux - all (most importantly `input`)
@@ -715,7 +790,7 @@ you should only need `input` though.
 * Haiku - some, see [hardware support](#touchscreen-hardware-support)
   - `./configure --disable-input --disable-touchkit --disable-waveshare`
 * Windows - no tslib module for the [Windows touchscreen API](https://msdn.microsoft.com/en-us/library/windows/desktop/dd317323(v=vs.85).aspx) (yet)
-  - `./configure --with-sdl2 --disable-tatung --disable-input --disable-touchkit --disable-waveshare`
+  - `./configure --with-sdl2 --disable-input --disable-touchkit --disable-waveshare`
 
 Writing your own plugin is quite easy, in case an existing one doesn't fit.
 
@@ -738,14 +813,47 @@ platforms [here](https://martinkepplinger.com/tslib/packages/).
 Please help porting missing programs!
 
 ## touchscreen hardware support
+**TL;DR:** On Linux, use `module_raw input`
+
 For mostly historical reasons, tslib includes device specific `module_raw` userspace
 drivers.
 The [ts.conf man page](https://manpages.debian.org/unstable/libts0/ts.conf.5.en.html)
 has details on the available `module_raw` drivers; not all of them are listed in the
 default `etc/ts.conf` config file. Those are to be considered workarounds and may get
 disabled in the default configuration in the future.
-If you use one of those, please `./configure --enable-...` it explicitely.
+If you use one of those, please `./configure --enable-...` it explicitly.
 
 It is strongly recommended to have a real device driver for your system
 and use a generic access `module_raw` of tslib. For Linux ([evdev](https://en.wikipedia.org/wiki/Evdev))
-this is called `input`.
+this is called `input`. There is an equivalent experimental module that needs libevdev
+installed: `module_raw input_evdev`.
+
+## Contributors
+
+This project exists [[thanks](THANKS)] to all the people who contribute. [[Contribute](CONTRIBUTING.md)].
+<a href="https://github.com/kergoth/tslib/contributors"><img src="https://opencollective.com/tslib/contributors.svg?width=890&button=false" /></a>
+
+
+## Backers
+
+Thank you to all our backers! 🙏 [[Become a backer](https://opencollective.com/tslib#backer)]
+
+<a href="https://opencollective.com/tslib#backers" target="_blank"><img src="https://opencollective.com/tslib/backers.svg?width=890"></a>
+
+
+## Sponsors
+
+Support this project by becoming a sponsor. Your logo will show up here with a link to your website. [[Become a sponsor](https://opencollective.com/tslib#sponsor)]
+
+<a href="https://opencollective.com/tslib/sponsor/0/website" target="_blank"><img src="https://opencollective.com/tslib/sponsor/0/avatar.svg"></a>
+<a href="https://opencollective.com/tslib/sponsor/1/website" target="_blank"><img src="https://opencollective.com/tslib/sponsor/1/avatar.svg"></a>
+<a href="https://opencollective.com/tslib/sponsor/2/website" target="_blank"><img src="https://opencollective.com/tslib/sponsor/2/avatar.svg"></a>
+<a href="https://opencollective.com/tslib/sponsor/3/website" target="_blank"><img src="https://opencollective.com/tslib/sponsor/3/avatar.svg"></a>
+<a href="https://opencollective.com/tslib/sponsor/4/website" target="_blank"><img src="https://opencollective.com/tslib/sponsor/4/avatar.svg"></a>
+<a href="https://opencollective.com/tslib/sponsor/5/website" target="_blank"><img src="https://opencollective.com/tslib/sponsor/5/avatar.svg"></a>
+<a href="https://opencollective.com/tslib/sponsor/6/website" target="_blank"><img src="https://opencollective.com/tslib/sponsor/6/avatar.svg"></a>
+<a href="https://opencollective.com/tslib/sponsor/7/website" target="_blank"><img src="https://opencollective.com/tslib/sponsor/7/avatar.svg"></a>
+<a href="https://opencollective.com/tslib/sponsor/8/website" target="_blank"><img src="https://opencollective.com/tslib/sponsor/8/avatar.svg"></a>
+<a href="https://opencollective.com/tslib/sponsor/9/website" target="_blank"><img src="https://opencollective.com/tslib/sponsor/9/avatar.svg"></a>
+
+

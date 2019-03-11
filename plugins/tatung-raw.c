@@ -1,10 +1,12 @@
 /*
  * tslib/plugins/tatung-raw.c
  *
- * courtesy of Nicolas FR, 2007
+ * Copyright (C) 2007 Nicolas FR
  *
  * This file is placed under the LGPL. Please see the file
  * COPYING for more details.
+ *
+ * SPDX-License-Identifier: LGPL-2.1
  */
 #include <stdlib.h>
 #include <stdio.h>

@@ -1,5 +1,5 @@
 /*
- * (C) 2017 Martin Keppligner <martink@posteo.de>
+ * Copyright (C) 2017 Martin Keppligner <martink@posteo.de>
  *
  * This file is part of tslib.
  *
@@ -15,6 +15,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this tool.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * SPDX-License-Identifier: GPL-2.0+
  */
 
 #include <SDL2/SDL.h>
@@ -95,12 +97,12 @@ void draw_crosshair(SDL_Renderer *r, int32_t x, int32_t y)
 	draw_line(r, x + 8, y - 9, x + 6, y - 9);
 }
 
-static int sort_by_x(const void* a, const void *b)
+static int sort_by_x(const void *a, const void *b)
 {
 	return (((struct ts_sample *)a)->x - ((struct ts_sample *)b)->x);
 }
 
-static int sort_by_y(const void* a, const void *b)
+static int sort_by_y(const void *a, const void *b)
 {
 	return (((struct ts_sample *)a)->y - ((struct ts_sample *)b)->y);
 }
@@ -116,7 +118,6 @@ void getxy(struct tsdev *ts, int *x, int *y)
 			perror("ts_read");
 			SDL_Quit();
 		}
-		
 	} while (samp[0].pressure == 0);
 
 	/* Now collect up to MAX_SAMPLES touches into the samp array. */
@@ -129,7 +130,7 @@ void getxy(struct tsdev *ts, int *x, int *y)
 			SDL_Quit();
 		}
 	} while (samp[index].pressure > 0);
-	printf("Took %d samples...\n",index);
+	printf("Took %d samples...\n", index);
 
 	/*
 	 * At this point, we have samples in indices zero to (index-1)
@@ -165,4 +166,3 @@ void getxy(struct tsdev *ts, int *x, int *y)
 			*y = (samp[middle-1].y + samp[middle].y) / 2;
 	}
 }
-

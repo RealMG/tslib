@@ -6,6 +6,8 @@
  * This file is placed under the LGPL.  Please see the file
  * COPYING for more details.
  *
+ * SPDX-License-Identifier: LGPL-2.1
+ *
  *
  * Close a touchscreen device.
  */
@@ -47,11 +49,12 @@ int ts_close(struct tsdev *ts)
 		info = next;
 	}
 
-	if (ts_close_restricted) {
+	if (ts_close_restricted)
 		ts_close_restricted(ts->fd, NULL);
-	} else {
+	else
 		ret = close(ts->fd);
-	}
+
+	free(ts->eventpath);
 
 	free(ts);
 

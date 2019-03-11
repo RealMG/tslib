@@ -21,6 +21,8 @@
  *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301
  *  USA
  *
+ * SPDX-License-Identifier: LGPL-2.1
+ *
  *
  * Touch screen library interface definitions.
  */
@@ -105,10 +107,22 @@ struct ts_lib_version_data {
 
 #define TSLIB_VERSION_MT		(1 << 0)	/* multitouch support */
 #define TSLIB_VERSION_OPEN_RESTRICTED	(1 << 1)	/* ts_open_restricted() */
+#define TSLIB_VERSION_EVENTPATH		(1 << 2)	/* ts_get_eventpath() */
+#define TSLIB_VERSION_VERSION		(1 << 3)	/* tslib_version() */
 
 enum ts_param {
 	TS_SCREEN_RES = 0,		/* 2 integer args, x and y */
 	TS_SCREEN_ROT			/* 1 integer arg, 1 = rotate */
+};
+
+struct ts_module_conf {
+	char *name;
+	char *params;
+	int raw;
+	int nr;
+
+	struct ts_module_conf *next;
+	struct ts_module_conf *prev;
 };
 
 /*
@@ -190,6 +204,31 @@ TSAPI int ts_read_raw_mt(struct tsdev *, struct ts_sample_mt **, int slots, int 
  * This function returns a pointer to a static copy of the version info struct.
  */
 TSAPI struct ts_lib_version_data *ts_libversion(void);
+
+/*
+ * Get the list of (commented-in) ts.conf module lines (as structs)
+ */
+TSAPI struct ts_module_conf *ts_conf_get(struct tsdev *ts);
+
+/*
+ * Write the list of modules to ts.conf
+ */
+TSAPI int ts_conf_set(struct ts_module_conf *conf);
+
+/*
+ * This function returns the path to the opened touchscreen input device file.
+ */
+TSAPI char *ts_get_eventpath(struct tsdev *tsdev);
+
+/*
+ * This simply returns tslib's version string
+ */
+TSAPI char *tslib_version(void);
+
+/*
+ * This prints tslib's logo to stdout, with pos preceding spaces
+ */
+TSAPI void ts_print_ascii_logo(unsigned int pos);
 
 #ifdef __cplusplus
 }

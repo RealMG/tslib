@@ -1,3 +1,6 @@
+/*
+ * SPDX-License-Identifier: LGPL-2.1
+ */
 #define TSLIB_DECLARE_MODULE(name) \
 	TSAPI struct tslib_module_info *name##_mod_init(struct tsdev *dev, const char *params)
 
@@ -9,6 +12,7 @@ TSLIB_DECLARE_MODULE(median);
 TSLIB_DECLARE_MODULE(pthres);
 TSLIB_DECLARE_MODULE(debounce);
 TSLIB_DECLARE_MODULE(skip);
+TSLIB_DECLARE_MODULE(invert);
 TSLIB_DECLARE_MODULE(iir);
 TSLIB_DECLARE_MODULE(lowpass);
 
@@ -20,8 +24,10 @@ TSLIB_DECLARE_MODULE(dmc);
 TSLIB_DECLARE_MODULE(dmc_dus3000);
 TSLIB_DECLARE_MODULE(galax);
 TSLIB_DECLARE_MODULE(h3600);
+TSLIB_DECLARE_MODULE(input_evdev);
 TSLIB_DECLARE_MODULE(input);
 TSLIB_DECLARE_MODULE(mk712);
+TSLIB_DECLARE_MODULE(one_wire_ts_input);
 TSLIB_DECLARE_MODULE(tatung);
 TSLIB_DECLARE_MODULE(touchkit);
 TSLIB_DECLARE_MODULE(ucb1x00);

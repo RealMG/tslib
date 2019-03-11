@@ -12,6 +12,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * SPDX-License-Identifier: GPL-2.0
  */
 
 #ifndef __CY8MRLN_H
@@ -112,7 +114,7 @@ enum{
 	WOT_SCANRATE_128HZ
 };
 
-/* WOT MIN & MAX configuraton value for scan rate
+/* WOT MIN & MAX configuration value for scan rate
  * NB: min. value is max freq and
  *     max. value is min freq.
  */

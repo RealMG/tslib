@@ -15,6 +15,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this tool.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * SPDX-License-Identifier: GPL-2.0+
  */
 
 #include <SDL2/SDL.h>
@@ -46,15 +48,8 @@
 
 static void help(void)
 {
-	struct ts_lib_version_data *ver = ts_libversion();
-
-	printf("                 _       _ _ _\n");
-	printf("                | |_ ___| (_) |__\n");
-	printf("                | __/ __| | | '_ \\\n");
-	printf("                | |_\\__ \\ | | |_) |\n");
-	printf("                 \\__|___/_|_|_.__/\n\n");
-	printf("tslib %s / libts ABI version %d (0x%06X)\n",
-		ver->package_version, ver->version_num >> 16, ver->version_num);
+	ts_print_ascii_logo(16);
+	printf("%s", tslib_version());
 	printf("\n");
 	printf("Usage: ts_test_mt [-v] [-i <device>] [-j <slots>]\n");
 	printf("\n");
@@ -124,6 +119,7 @@ int main(int argc, char **argv)
 
 		if (errno) {
 			char str[9];
+
 			sprintf(str, "option ?");
 			str[7] = c & 0xff;
 			perror(str);
@@ -211,17 +207,17 @@ int main(int argc, char **argv)
 					samp_mt[0][i].x,
 					samp_mt[0][i].y,
 					samp_mt[0][i].pressure);
-                        }
+			}
 		}
 
 		SDL_PollEvent(&ev);
 		switch (ev.type) {
-			case SDL_KEYDOWN:
-			case SDL_QUIT:
-				SDL_ShowCursor(SDL_ENABLE);
-				SDL_DestroyWindow(sdlWindow);
-				SDL_Quit();
-				goto out;
+		case SDL_KEYDOWN:
+		case SDL_QUIT:
+			SDL_ShowCursor(SDL_ENABLE);
+			SDL_DestroyWindow(sdlWindow);
+			SDL_Quit();
+			goto out;
 		}
 
 		SDL_RenderPresent(sdlRenderer);

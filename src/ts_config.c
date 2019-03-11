@@ -6,6 +6,8 @@
  * This file is placed under the LGPL.  Please see the file
  * COPYING for more details.
  *
+ * SPDX-License-Identifier: LGPL-2.1
+ *
  *
  * Read the configuration and load the appropriate drivers.
  */
@@ -49,7 +51,8 @@ static void discard_null_tokens(char **p, char **tokPtr)
 	}
 }
 
-int ts_config(struct tsdev *ts)
+static int __ts_config(struct tsdev *ts, char **conffile_modules,
+		       char **conffile_params, int *raw)
 {
 	char buf[BUF_SIZE], *p;
 	FILE *f;
@@ -75,8 +78,8 @@ int ts_config(struct tsdev *ts)
 		if (strdup_allocated)
 			free(conffile);
 
-		ts_error("Couldn't open tslib config file: %s\n",
-			 strerror(errno));
+		ts_error("Couldn't open tslib config file %s: %s\n",
+			 conffile, strerror(errno));
 		return -1;
 	}
 
@@ -120,7 +123,17 @@ int ts_config(struct tsdev *ts)
 			module_name = strsep(&p, " \t");
 		#endif
 			discard_null_tokens(&p, &module_name);
-			ret = ts_load_module(ts, module_name, p);
+			if (!conffile_modules) {
+				ret = ts_load_module(ts, module_name, p);
+			} else {
+			#ifdef DEBUG
+				printf("TSLIB_CONFFILE: module %s %s\n",
+					module_name, p);
+			#endif
+				sprintf(conffile_modules[line], "%s", module_name);
+				if (conffile_params)
+					sprintf(conffile_params[line], "%s", p);
+			}
 		} else if (strcasecmp(tok, "module_raw") == 0) {
 		#if !defined HAVE_STRSEP
 			module_name = ts_strsep(&p, " \t");
@@ -128,14 +141,27 @@ int ts_config(struct tsdev *ts)
 			module_name = strsep(&p, " \t");
 		#endif
 			discard_null_tokens(&p, &module_name);
-			ret = ts_load_module_raw(ts, module_name, p);
+			if (!conffile_modules) {
+				ret = ts_load_module_raw(ts, module_name, p);
+			} else {
+			#ifdef DEBUG
+				printf("TSLIB_CONFFILE: module_raw %s %s\n",
+					module_name, p);
+			#endif
+				sprintf(conffile_modules[line], "%s", module_name);
+				if (conffile_params)
+					sprintf(conffile_params[line], "%s", p);
+
+				if (raw)
+					raw[line] = 1;
+			}
 		} else {
 			ts_error("%s: Unrecognised option %s:%d:%s\n",
 				 conffile, line, tok);
 			break;
 		}
 		if (ret != 0) {
-			ts_error("Couldnt load module %s\n", module_name);
+			ts_error("Couldn't load module %s\n", module_name);
 			break;
 		}
 	}
@@ -151,6 +177,17 @@ int ts_config(struct tsdev *ts)
 		free(conffile);
 
 	return ret;
+}
+
+int ts_config_ro(struct tsdev *ts, char **conffile_modules,
+		 char **conffile_params, int *raw)
+{
+	return __ts_config(ts, conffile_modules, conffile_params, raw);
+}
+
+int ts_config(struct tsdev *ts)
+{
+	return __ts_config(ts, NULL, NULL, NULL);
 }
 
 int ts_reconfig(struct tsdev *ts)

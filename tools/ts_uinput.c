@@ -19,6 +19,8 @@
  * You should have received a copy of the GNU General Public License
  * along with ts_uinput.  If not, see <http://www.gnu.org/licenses/>.
  *
+ * SPDX-License-Identifier: GPL-2.0+
+ *
  *
  * ts_uinput daemon to generate (single- and multitouch) input events
  * taken from tslib multitouch samples. It's a userspace evdev driver
@@ -101,6 +103,14 @@
 #define UINPUT_VERSION	2
 #endif
 
+#ifndef UI_GET_SYSNAME
+#define UI_GET_SYSNAME(len)     _IOC(_IOC_READ, UINPUT_IOCTL_BASE, 44, len)
+#endif
+
+#define UINPUT_VERSION_HAVE_SYSNAME 4
+
+static char *defaultfbdevice = "/dev/fb0";
+
 struct data_t {
 	int fd_uinput;
 	int fd_input;
@@ -116,19 +126,13 @@ struct data_t {
 	int slots;
 	unsigned short uinput_version;
 	short mt_type_a;
+	unsigned short nofb;
 };
 
 static void help(void)
 {
-	struct ts_lib_version_data *ver = ts_libversion();
-
-	printf("                 _       _ _ _\n");
-	printf("                | |_ ___| (_) |__\n");
-	printf("                | __/ __| | | '_ \\\n");
-	printf("                | |_\\__ \\ | | |_) |\n");
-	printf("                 \\__|___/_|_|_.__/\n\n");
-	printf("tslib %s / libts ABI version %d (0x%06X)\n",
-		ver->package_version, ver->version_num >> 16, ver->version_num);
+	ts_print_ascii_logo(16);
+	printf("%s", tslib_version());
 	printf("\n");
 	printf("Starts tslib instance listening to given event <device>, creates a virtual\n");
 	printf("input event device with given <name> using 'uinput', then continually reads\n");
@@ -144,6 +148,7 @@ static void help(void)
 	printf("  -i, --idev          touchscreen's input device\n");
 	printf("  -f, --fbdev         touchscreen's framebuffer device\n");
 	printf("  -s, --slots         override available concurrent touch contacts\n");
+	printf("  -b, --nofb          read screen resolution from the input dev, not the framebuffer device.\n");
 	printf("\n");
 	printf("See the manpage for further details.\n");
 }
@@ -152,8 +157,7 @@ static void help(void)
 static int send_touch_events(struct data_t *data, struct ts_sample_mt **s,
 			     int nr, int max_slots)
 {
-	int i;
-	int j;
+	int i, j, k;
 	int c = 0;
 
 	for (j = 0; j < nr; j++) {
@@ -162,16 +166,16 @@ static int send_touch_events(struct data_t *data, struct ts_sample_mt **s,
 		       sizeof(struct input_event) * MAX_CODES_PER_SLOT * max_slots);
 
 		for (i = 0; i < max_slots; i++) {
-			if (s[j][i].pen_down == 1 || s[j][i].pen_down == 0) {
+			if (!(s[j][i].valid & TSLIB_MT_VALID))
+				continue;
+
+			if (s[j][i].pen_down == 1) {
 				data->ev[c].time = s[j][i].tv;
 				data->ev[c].type = EV_KEY;
 				data->ev[c].code = BTN_TOUCH;
 				data->ev[c].value = s[j][i].pen_down;
 				c++;
 			}
-
-			if (!(s[j][i].valid & TSLIB_MT_VALID))
-				continue;
 
 			data->ev[c].time = s[j][i].tv;
 			data->ev[c].type = EV_ABS;
@@ -296,6 +300,15 @@ static int send_touch_events(struct data_t *data, struct ts_sample_mt **s,
 				data->ev[c].value = 0;
 				c++;
 			}
+
+			if (s[j][i].pen_down == 0) {
+				data->ev[c].time = s[j][i].tv;
+				data->ev[c].type = EV_KEY;
+				data->ev[c].code = BTN_TOUCH;
+				data->ev[c].value = s[j][i].pen_down;
+				c++;
+			}
+
 		}
 
 		if (c > 0) {
@@ -304,16 +317,83 @@ static int send_touch_events(struct data_t *data, struct ts_sample_mt **s,
 			data->ev[c].code = SYN_REPORT;
 			data->ev[c].value = 0;
 
-
-			if (write(data->fd_uinput,
-				  data->ev,
-				  sizeof(struct input_event) * (c + 1)) < 0) {
-				perror("write");
-				return errno;
+			for(k = 0; k <= c; k++) {
+				if (write(data->fd_uinput, &data->ev[k],
+					  sizeof(struct input_event)) == -1) {
+					perror("write");
+					return errno;
+				}
 			}
 		}
 
 		c = 0;
+	}
+
+	return 0;
+}
+
+static int get_abs_max_fb(struct data_t *data, int *max_x, int *max_y)
+{
+	struct fb_var_screeninfo fbinfo;
+
+	if (ioctl(data->fd_fb, FBIOGET_VSCREENINFO, &fbinfo) < 0) {
+		perror("ioctl FBIOGET_VSCREENINFO");
+		return errno;
+	}
+
+	*max_x = fbinfo.xres - 1;
+	*max_y = fbinfo.yres - 1;
+
+	return 0;
+}
+
+static int get_abs_max_input(struct data_t *data, int *max_x, int *max_y)
+{
+	long absbit[BITS_TO_LONGS(ABS_CNT)];
+	struct input_absinfo absinfo;
+	int abs_x_only;
+
+	if (ioctl(data->fd_input, EVIOCGBIT(EV_ABS, sizeof(absbit)), absbit) < 0) {
+		perror("ioctl EVIOCGBIT");
+		return errno;
+	}
+
+	if (!(absbit[BIT_WORD(ABS_MT_POSITION_X)] & BIT_MASK(ABS_MT_POSITION_X)) ||
+	    !(absbit[BIT_WORD(ABS_MT_POSITION_Y)] & BIT_MASK(ABS_MT_POSITION_Y))) {
+		if (!(absbit[BIT_WORD(ABS_X)] & BIT_MASK(ABS_X)) ||
+		    !(absbit[BIT_WORD(ABS_Y)] & BIT_MASK(ABS_Y))) {
+			return errno;
+		} else {
+			abs_x_only = 1;
+		}
+	} else {
+		abs_x_only = 0;
+	}
+
+	if (abs_x_only) {
+		if (ioctl(data->fd_input, EVIOCGABS(ABS_X), &absinfo) < 0) {
+			perror("ioctl EVIOCGABS");
+			return errno;
+		}
+		*max_x = absinfo.maximum;
+
+		if (ioctl(data->fd_input, EVIOCGABS(ABS_Y), &absinfo) < 0) {
+			perror("ioctl EVIOCGABS");
+			return errno;
+		}
+		*max_y = absinfo.maximum;
+	} else {
+		if (ioctl(data->fd_input, EVIOCGABS(ABS_MT_POSITION_X), &absinfo) < 0) {
+			perror("ioctl EVIOCGABS");
+			return errno;
+		}
+		*max_x = absinfo.maximum;
+
+		if (ioctl(data->fd_input, EVIOCGABS(ABS_MT_POSITION_Y), &absinfo) < 0) {
+			perror("ioctl EVIOCGABS");
+			return errno;
+		}
+		*max_y = absinfo.maximum;
 	}
 
 	return 0;
@@ -325,12 +405,19 @@ static int setup_uinput(struct data_t *data, int *max_slots)
 	unsigned long bit[EV_MAX][NBITS(KEY_MAX)];
 	int i, j;
 	struct input_absinfo absinfo;
-	struct fb_var_screeninfo fbinfo;
+	int max_x = 0;
+	int max_y = 0;
+	int ret;
+	int have_abs_mt_position = 0;
+	int have_abs_mt_slot = 0;
 
-	if (ioctl(data->fd_fb, FBIOGET_VSCREENINFO, &fbinfo) < 0) {
-		perror("ioctl FBIOGET_VSCREENINFO");
-		goto err;
-	}
+	if (data->nofb)
+		ret = get_abs_max_input(data, &max_x, &max_y);
+	else
+		ret = get_abs_max_fb(data, &max_x, &max_y);
+
+	if (ret)
+		return ret;
 
 	data->fd_uinput = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
 	if (data->fd_uinput == -1) {
@@ -390,32 +477,63 @@ static int setup_uinput(struct data_t *data, int *max_slots)
 
 						if (j == ABS_X) {
 							uidev.absmin[ABS_X] = 0;
-							uidev.absmax[ABS_X] = fbinfo.xres - 1;
+							uidev.absmax[ABS_X] = max_x;
 						} else if (j == ABS_Y) {
 							uidev.absmin[ABS_Y] = 0;
-							uidev.absmax[ABS_Y] = fbinfo.yres - 1;
+							uidev.absmax[ABS_Y] = max_y;
 						} else if (j == ABS_MT_POSITION_X) {
 							uidev.absmin[ABS_MT_POSITION_X] = 0;
-							uidev.absmax[ABS_MT_POSITION_X] = fbinfo.xres - 1;
+							uidev.absmax[ABS_MT_POSITION_X] = max_x;
+							have_abs_mt_position = 1;
 						} else if (j == ABS_MT_POSITION_Y) {
 							uidev.absmin[ABS_MT_POSITION_Y] = 0;
-							uidev.absmax[ABS_MT_POSITION_Y] = fbinfo.yres - 1;
+							uidev.absmax[ABS_MT_POSITION_Y] = max_y;
 						} else {
 							uidev.absmin[j] = absinfo.minimum;
 							uidev.absmax[j] = absinfo.maximum;
 						}
 
 						if (j == ABS_MT_SLOT) {
-							*max_slots = absinfo.maximum + 1 - absinfo.minimum;
+							if (*max_slots == 1)
+								*max_slots = absinfo.maximum + 1 -
+									     absinfo.minimum;
+
+							have_abs_mt_slot = 1;
 						}
-					} else if (i == EV_SYN) {
-						if (j == SYN_MT_REPORT)
-							data->mt_type_a = 1;
 					}
 				}
 			}
 		}
 	}
+
+	/*
+	 *if we have multitouch we generate type B only and need this in
+	 * case of type A input
+	 */
+	if (have_abs_mt_position && !have_abs_mt_slot) {
+		if (ioctl(data->fd_uinput, UI_SET_ABSBIT, ABS_MT_TRACKING_ID) < 0) {
+			perror("ioctl UI_SET_ABSBIT");
+			goto err;
+		}
+		if (ioctl(data->fd_uinput, UI_SET_ABSBIT, ABS_MT_SLOT) < 0) {
+			perror("ioctl UI_SET_ABSBIT");
+			goto err;
+		}
+
+		/* if no user setting, we use 5 slots for type A devices */
+		if (*max_slots == 1)
+			*max_slots = 5;
+
+		if (data->verbose)
+			printf(DEFAULT_UINPUT_NAME ": We use a " GREEN
+			       "multitouch type A" RESET " device\n");
+	}
+
+	if (have_abs_mt_position && have_abs_mt_slot && data->verbose)
+		printf(DEFAULT_UINPUT_NAME ": We use a " GREEN
+		       "multitouch type B" RESET " device\n");
+
+	uidev.absmax[ABS_MT_SLOT] = *max_slots - 1;
 
 	if (write(data->fd_uinput, &uidev, sizeof(uidev)) == -1) {
 		perror("write uinput_user_dev");
@@ -492,9 +610,6 @@ static void cleanup(struct data_t *data)
 	if (data->ev)
 		free(data->ev);
 
-	if (data->ts)
-		ts_close(data->ts);
-
 	if (data->fd_uinput > 0) {
 		ret = ioctl(data->fd_uinput, UI_DEV_DESTROY);
 		if (ret == -1)
@@ -514,7 +629,8 @@ static void cleanup(struct data_t *data)
 }
 
 /* directly from libevdev (LGPL) */
-static int is_event_device(const struct dirent *dent) {
+static int is_event_device(const struct dirent *dent)
+{
 	return strncmp("event", dent->d_name, 5) == 0;
 }
 
@@ -542,140 +658,59 @@ static char *fetch_device_node(const char *path)
 	return devnode;
 }
 
-/* --- start src/ts_setup.c plus reporting the chosen input device --- */
-
-#define DEV_INPUT_EVENT "/dev/input"
-#define EVENT_DEV_NAME "event"
-
-static char* scan_devices(void)
+/* return the /dev/input/eventX path of the created device */
+static char *get_new_path(struct data_t *data)
 {
 	struct dirent **namelist;
-	int i, ndev;
-	char *filename = NULL;
-	int have_touchscreen = 0;
-	long propbit[BITS_TO_LONGS(INPUT_PROP_MAX)] = {0};
+	const char *path = "/dev/input/";
+	int ndev;
+	int fd;
+	char buf[256];
+	int ret;
+	char *devnode = NULL;
 
-	ndev = scandir(DEV_INPUT_EVENT, &namelist, is_event_device, alphasort);
+	ndev = scandir(path, &namelist, is_event_device, alphasort);
 	if (ndev <= 0)
 		return NULL;
 
-	for (i = 0; i < ndev; i++) {
-		char fname[64];
-		int fd = -1;
+	while (ndev--) {
+		if (asprintf(&devnode, "/dev/input/%s", namelist[ndev]->d_name) == -1) {
+			devnode = NULL;
+			break;
+		}
 
-		snprintf(fname, sizeof(fname),
-			 "%s/%s", DEV_INPUT_EVENT, namelist[i]->d_name);
-		fd = open(fname, O_RDONLY);
-		if (fd < 0)
-			continue;
+		fd = open(devnode, O_RDWR);
+		if (fd == -1)
+			return NULL;
 
-		if ((ioctl(fd, EVIOCGPROP(sizeof(propbit)), propbit) < 0) ||
-			!(propbit[BIT_WORD(INPUT_PROP_DIRECT)] &
-				  BIT_MASK(INPUT_PROP_DIRECT)) ) {
+		ret = ioctl(fd, EVIOCGNAME(sizeof(buf) - 1), buf);
+		if (ret < 0) {
 			close(fd);
-			continue;
-		} else {
+			free(devnode);
+			break;
+		}
+
+		ret = strncmp(buf, data->uinput_name, strlen(data->uinput_name));
+		if (ret == 0) {
 			close(fd);
-			have_touchscreen = 1;
+			free(namelist[ndev]);
+			break;
 		}
 
-		free(namelist[i]);
-
-                if (have_touchscreen) {
-			filename = malloc(strlen(DEV_INPUT_EVENT) +
-					  strlen(EVENT_DEV_NAME) +
-					  3);
-			if (!filename)
-				return NULL;
-
-	                sprintf(filename, "%s/%s%d",
-				DEV_INPUT_EVENT, EVENT_DEV_NAME,
-				i);
-		}
-
-		return filename;
+		close(fd);
+		free(namelist[ndev]);
+		free(devnode);
 	}
 
-	return NULL;
+	free(namelist);
+	return devnode;
 }
-
-static char *ts_name_default[] = {
-		"/dev/input/ts",
-		"/dev/input/touchscreen",
-		"/dev/touchscreen/ucb1x00",
-		NULL
-};
-
-#define EVENTNAME_LEN 15
-
-static struct tsdev *ts_setup_ext(char *dev_name, int nonblock,
-				  char **dev_input_event)
-{
-	char **defname;
-	struct tsdev *ts = NULL;
-	char *found = NULL;
-	int scanned = 0;
-
-	*dev_input_event = malloc(strlen(DEV_INPUT_EVENT) + EVENTNAME_LEN);
-	if (!*dev_input_event)
-		return NULL;
-
-	dev_name = dev_name ? dev_name : getenv("TSLIB_TSDEVICE");
-
-	if (dev_name != NULL) {
-		found = dev_name;
-		goto open;
-	}
-
-	defname = &ts_name_default[0];
-	while (*defname != NULL) {
-		ts = ts_open(*defname, nonblock);
-		if (ts != NULL) {
-			found = *defname;
-			goto opened;
-		}
-
-		++defname;
-	}
-
-	found = scan_devices();
-	if (!found) {
-		return NULL;
-	} else {
-		scanned = 1;
-		goto open;
-	}
-
-open:
-	ts = ts_open(found, nonblock);
-opened:
-	if (strlen(found) >= strlen(DEV_INPUT_EVENT) + EVENTNAME_LEN) {
-		if (ts)
-			ts_close(ts);
-
-		return NULL;
-	}
-
-	sprintf(*dev_input_event, "%s", found);
-
-	if (scanned)
-		free(found);
-
-	/* if detected try to configure it */
-	if (ts && ts_config(ts) != 0) {
-		ts_close(ts);
-		return NULL;
-	}
-
-	return ts;
-}
-/* --- end src/ts_setup.c ---*/
 
 int main(int argc, char **argv)
 {
 	struct data_t data = {
-		.fd_uinput = 0,
-		.fd_input = 0,
+		.fd_uinput = -1,
+		.fd_input = -1,
 		.uinput_name = NULL,
 		.input_name = NULL,
 		.fb_name = NULL,
@@ -686,6 +721,7 @@ int main(int argc, char **argv)
 		.slots = 1,
 		.mt_type_a = 0,
 		.verbose_daemon = 0,
+		.nofb = 0,
 	};
 	int i, j;
 	unsigned short run_daemon = 0;
@@ -703,10 +739,11 @@ int main(int argc, char **argv)
 			{ "idev",         required_argument, NULL, 'i' },
 			{ "fbdev",        required_argument, NULL, 'f' },
 			{ "slots",        required_argument, NULL, 's' },
+			{ "nofb",         no_argument,       NULL, 'b' },
 		};
 
 		int option_index = 0;
-		int c = getopt_long(argc, argv, "dhn:f:i:vs:", long_options,
+		int c = getopt_long(argc, argv, "dhn:f:i:vs:b", long_options,
 				    &option_index);
 
 		if (c == -1)
@@ -724,6 +761,10 @@ int main(int argc, char **argv)
 
 		case 'v':
 			data.verbose = 1;
+			break;
+
+		case 'b':
+			data.nofb = 1;
 			break;
 
 		case 'd':
@@ -749,6 +790,7 @@ int main(int argc, char **argv)
 
 		if (errno) {
 			char str[9];
+
 			sprintf(str, "option ?");
 			str[7] = c & 0xff;
 			perror(str);
@@ -756,7 +798,8 @@ int main(int argc, char **argv)
 	}
 
 	/* if we run as a daemon, we don't print all debug output. we print
-	 * the input device node before returning. */
+	 * the input device node before returning.
+	 */
 	if (data.verbose && run_daemon) {
 		data.verbose = 0;
 		data.verbose_daemon = 1;
@@ -780,32 +823,30 @@ int main(int argc, char **argv)
 		sprintf(data.uinput_name, DEFAULT_UINPUT_NAME);
 	}
 
-	if (!data.fb_name) {
-		if (getenv("TSLIB_FBDEVICE")) {
-			data.fb_name = getenv("TSLIB_FBDEVICE");
-		} else {
-			fprintf(stderr, RED DEFAULT_UINPUT_NAME
-				": no framebuffer device specified"
-				RESET "\n");
+	if (!data.nofb) {
+		if (!data.fb_name) {
+			if (getenv("TSLIB_FBDEVICE"))
+				data.fb_name = getenv("TSLIB_FBDEVICE");
+			else
+				data.fb_name = defaultfbdevice;
+		}
+
+		data.fd_fb = open(data.fb_name, O_RDWR);
+		if (data.fd_fb == -1) {
+			perror("open");
 			goto out;
 		}
-	}
 
-	data.fd_fb = open(data.fb_name, O_RDWR);
-	if (data.fd_fb == -1) {
-		perror("open");
-		goto out;
+		if (data.verbose)
+			printf(DEFAULT_UINPUT_NAME ": using framebuffer device "
+			       GREEN "%s" RESET "\n",
+			       data.fb_name);
 	}
-
-	if (data.verbose)
-		printf(DEFAULT_UINPUT_NAME ": using framebuffer device "
-		       GREEN "%s" RESET "\n",
-		       getenv("TSLIB_FBDEVICE"));
 
 	/* non-blocking for one read in order to verify reading and fail before forking */
-	data.ts = ts_setup_ext(data.input_name, 1, &dev_input_name);
-	if (!data.ts || !dev_input_name) {
-		perror("ts_setup_ext");
+	data.ts = ts_setup(data.input_name, 1);
+	if (!data.ts) {
+		perror("ts_setup");
 		goto out;
 	}
 
@@ -831,11 +872,15 @@ int main(int argc, char **argv)
 	free(testsample_p);
 
 	/* blocking setup for production run */
-	data.ts = ts_setup_ext(data.input_name, 0, &dev_input_name);
-	if (!data.ts || !dev_input_name) {
-		perror("ts_setup_ext");
+	data.ts = ts_setup(data.input_name, 0);
+	if (!data.ts) {
+		perror("ts_setup");
 		goto out;
 	}
+
+	dev_input_name = ts_get_eventpath(data.ts);
+	if (!dev_input_name)
+		goto out;
 
 	data.fd_input = open(dev_input_name, O_RDWR);
 	if (data.fd_input == -1) {
@@ -848,40 +893,38 @@ int main(int argc, char **argv)
 		       ": using input device " GREEN "%s" RESET "\n",
 		       dev_input_name);
 
-	if (setup_uinput(&data, &data.slots)) {
+	if (setup_uinput(&data, &data.slots))
 		goto out;
-	} else {
-		if (data.verbose && data.slots == 1)
-			printf(DEFAULT_UINPUT_NAME
-			       ": We don't use a multitouch device\n");
-		else if (data.verbose && data.slots > 1)
-			printf(DEFAULT_UINPUT_NAME
-			       ": We use a "
-			       GREEN "multitouch" RESET
-			       " device\n");
-	}
 
 	if (data.verbose) {
 		printf(DEFAULT_UINPUT_NAME ": running uinput version %d\n", UINPUT_VERSION);
-		#if UINPUT_VERSION >= 4
-			char name[64];
-			int ret = ioctl(data.fd_uinput,
-					UI_GET_SYSNAME(sizeof(name)),
-					name);
-			if (ret >= 0) {
-				char buf[sizeof(SYS_INPUT_DIR) + sizeof(name)] = SYS_INPUT_DIR;
-				char *devnode;
-
-				snprintf(&buf[strlen(SYS_INPUT_DIR)], sizeof(name), "%s", name);
-				fprintf(stdout, "created %s\n", buf);
-				devnode = fetch_device_node(buf);
-				if (devnode)
-					fprintf(stdout, "%s\n", devnode);
+		char *devnode;
+		char name[64];
+		int ret = ioctl(data.fd_uinput,
+				UI_GET_SYSNAME(sizeof(name)),
+				name);
+		if (ret == -1) {
+			if (errno != EINVAL) {
+				perror("ioctl UI_GET_SYSNAME");
+				goto out;
 			}
-		#else
-			fprintf(stderr, DEFAULT_UINPUT_NAME
-				": See the kernel log for the device number\n");
-		#endif
+
+			/* assume we have UINPUT_VERSION < 4 */
+
+			devnode = get_new_path(&data);
+			if (!devnode)
+				goto out;
+
+			fprintf(stdout, "%s\n", devnode);
+		} else {
+			char buf[sizeof(SYS_INPUT_DIR) + sizeof(name)] = SYS_INPUT_DIR;
+
+			snprintf(&buf[strlen(SYS_INPUT_DIR)], sizeof(name), "%s", name);
+			fprintf(stdout, "created %s\n", buf);
+			devnode = fetch_device_node(buf);
+			if (devnode)
+				fprintf(stdout, "%s\n", devnode);
+		}
 	}
 
 	data.ev = malloc(sizeof(struct input_event) * MAX_CODES_PER_SLOT * data.slots);
@@ -905,33 +948,41 @@ int main(int argc, char **argv)
 	}
 
 	if (run_daemon) {
-		#if UINPUT_VERSION >= 4
-			char name[64];
-			int ret = ioctl(data.fd_uinput,
-					UI_GET_SYSNAME(sizeof(name)),
-					name);
-			if (ret >= 0) {
-				if (data.verbose_daemon) {
-					char buf[sizeof(SYS_INPUT_DIR) + sizeof(name)] = SYS_INPUT_DIR;
-					char *devnode;
-
-					snprintf(&buf[strlen(SYS_INPUT_DIR)], sizeof(name), "%s", name);
-					devnode = fetch_device_node(buf);
-					if (devnode)
-						fprintf(stdout, "%s\n", devnode);
-				} else {
-					fprintf(stdout, "%s\n", name);
-				}
-
-				fflush(stdout);
-			} else {
+		char *devnode;
+		char name[64];
+		int ret = ioctl(data.fd_uinput,
+				UI_GET_SYSNAME(sizeof(name)),
+				name);
+		if (ret == -1) {
+			if (errno != EINVAL) {
 				perror("ioctl UI_GET_SYSNAME");
 				goto out;
 			}
-		#else
-			fprintf(stderr, DEFAULT_UINPUT_NAME
-			": See the kernel log for the device number\n");
-		#endif
+
+			/* assume we have UINPUT_VERSION < 4 */
+
+			if (data.verbose_daemon) {
+				devnode = get_new_path(&data);
+				if (!devnode)
+					goto out;
+
+				fprintf(stdout, "%s\n", devnode);
+			}
+		} else {
+			if (data.verbose_daemon) {
+				char buf[sizeof(SYS_INPUT_DIR) + sizeof(name)] = SYS_INPUT_DIR;
+
+				snprintf(&buf[strlen(SYS_INPUT_DIR)], sizeof(name), "%s", name);
+				devnode = fetch_device_node(buf);
+				if (devnode)
+					fprintf(stdout, "%s\n", devnode);
+			} else {
+				fprintf(stdout, "%s\n", name);
+			}
+		}
+
+		fflush(stdout);
+
 		if (daemon(0, 0) == -1) {
 			perror("error starting daemon");
 			goto out;

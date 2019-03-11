@@ -1,4 +1,8 @@
-
+/*
+ * Copyright (C) 2011 Wolfram Sang
+ *
+ * SPDX-License-Identifier: LGPL-2.1
+ */
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>

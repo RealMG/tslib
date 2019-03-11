@@ -8,7 +8,10 @@
  * This file is placed under the LGPL.  Please see the file
  * COPYING for more details.
  *
- * Median filter incomming data. For some theory, see
+ * SPDX-License-Identifier: LGPL-2.1
+ *
+ *
+ * Median filter incoming data. For some theory, see
  * https://en.wikipedia.org/wiki/Median_filter
  */
 
@@ -46,6 +49,7 @@ struct median_context {
 	struct ts_sample_mt		**delay_mt;
 	int				withsamples;
 	int				*withsamples_mt;
+	short				*pen_down;
 	int				slots;
 	unsigned int			depth;
 	int32_t				*sorted;
@@ -168,7 +172,7 @@ static int median_read(struct tslib_module_info *inf, struct ts_sample *samp,
 
 			if ((cpress == 0)  && (c->withsamples != 0)) {
 				/* We have penup. Flush the line we now must
-				 * wait for c->size / 2 samples untill we get
+				 * wait for c->size / 2 samples until we get
 				 * valid data again
 				 */
 				memset(c->delay,
@@ -254,9 +258,19 @@ static int median_read_mt(struct tslib_module_info *inf,
 			return -ENOMEM;
 	}
 
+	if (c->pen_down == NULL || max_slots > c->slots) {
+		if (c->pen_down)
+			free(c->pen_down);
+
+		c->pen_down = calloc(max_slots, sizeof(short));
+		if (!c->pen_down)
+			return -ENOMEM;
+	}
+
 	for (i = 0; i < ret; i++) {
 		for (j = 0; j < max_slots; j++) {
 			unsigned int cpress = 0;
+			c->pen_down[j] = -1;
 
 			if (!(samp[i][j].valid & TSLIB_MT_VALID))
 				continue;
@@ -296,7 +310,7 @@ static int median_read_mt(struct tslib_module_info *inf,
 
 			if ((cpress == 0) && (c->withsamples_mt[j] != 0)) {
 				/* We have penup. Flush the line we now must
-				 * wait for c->size / 2 samples untill we get
+				 * wait for c->size / 2 samples until we get
 				 * valid data again
 				 */
 				memset(c->delay_mt[j],
@@ -308,6 +322,8 @@ static int median_read_mt(struct tslib_module_info *inf,
 				printf("MEDIAN: Pen Up\n");
 			#endif
 				samp[i][j].pressure = cpress;
+				samp[i][j].pen_down = 0;
+				c->pen_down[j] = -1;
 			} else if ((cpress != 0) &&
 				   (c->withsamples_mt[j] == 0)) {
 				/* We have pen down */
@@ -320,6 +336,11 @@ static int median_read_mt(struct tslib_module_info *inf,
 			if (cpress != 0 && c->withsamples_mt[j] <= c->size / 2) {
 				samp[i][j].valid = 0;
 				c->withsamples_mt[j]++;
+			} else if (cpress !=0 && c->pen_down[j] == -1 &&
+				   c->withsamples_mt[j] > c->size / 2) {
+				/* the pen-down we generate */
+				c->pen_down[j] = 1;
+				samp[i][j].pen_down = 1;
 			}
 		}
 	}
@@ -421,7 +442,9 @@ TSAPI struct tslib_module_info *median_mod_init(__attribute__ ((unused)) struct 
 	if (c->delay == NULL) {
 		c->delay = malloc(sizeof(struct ts_sample) * 3);
 		c->size = 3;
+	#ifdef DEBUG
 		printf("Using default size of 3\n");
+	#endif
 	}
 
 	return &(c->module);
